@@ -1,19 +1,8 @@
 #!/usr/bin/env python3
 """
 One-shot TOG patch detector for GitHub Actions (no PC needed).
-
-Polls the live cdn_config for a set of candidate app versions. If the bundle
-folder changes off the last-known one, it:
-  - downloads that folder's bundles.zip (the manifest, before it gets purged),
-  - counts the bundles,
-  - posts a Discord alert (via the DISCORD_WEBHOOK secret),
-  - records the new folder in state/last_folder.txt.
-
-Also alerts if the server raises the minimum accepted app version (forced-update
-signal that usually precedes a content folder).
-
-State persists by committing state/last_folder.txt back to the repo (done by the
-workflow). Stdlib only -- no pip install needed.
+Polls cdn_config; on a new bundle folder it grabs the manifest, posts a Discord
+alert, and records the folder in state/last_folder.txt. Stdlib only.
 """
 import urllib.request, urllib.error, json, os, io, zipfile, re
 
@@ -23,7 +12,7 @@ APP_VERS = ['3.11.00','3.11.01','3.11.02',
             '3.12.00','3.12.01','3.12.02',
             '3.13.00','3.13.01','3.13.02',
             '3.14.00','3.15.00','3.16.00','3.17.00','3.18.00','3.19.00','3.20.00']
-CUR_VER  = '3.12.01'   # the version currently live -- used for the min_version fallback alert
+CUR_VER  = '3.12.01'
 UA_UNITY = 'UnityPlayer/2022.3.62f3 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)'
 UA_DALVIK= 'Dalvik/2.1.0 (Linux; U; Android 9; SM-N960N Build/PQ3A.190605.003)'
 STATE    = 'state/last_folder.txt'
@@ -83,7 +72,9 @@ def discord(msg):
         print('[no webhook set] would post:\n', msg)
         return
     data = json.dumps({'content': msg}).encode()
-    req = urllib.request.Request(WEBHOOK, data=data, headers={'Content-Type': 'application/json'})
+    req = urllib.request.Request(WEBHOOK, data=data, headers={
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (TOG-Patch-Monitor)'})
     try:
         urllib.request.urlopen(req, timeout=20)
         print('discord alert sent')
@@ -100,7 +91,7 @@ def main():
     print(f'newest folder = {folder} (via {ver}); last known = {last}')
 
     if cur_min and ver_tuple(cur_min) > ver_tuple(CUR_VER):
-        discord(f"⚠️ **TOG**: server now requires app version **>= {cur_min}** "
+        discord(f"\u26a0\ufe0f **TOG**: server now requires app version **>= {cur_min}** "
                 f"(forced update rolling out). A content folder may follow soon.")
 
     if last is None:
@@ -124,7 +115,7 @@ def main():
             f"Folder: `{folder}`  (via version {ver})\n"
             f"min_version: `{minv}`  |  bundles in manifest: **{count}**\n"
             f"CDN: {root}/{folder}/\n"
-            f"Manifest saved as a workflow artifact — full-dump from your PC when ready."
+            f"Manifest saved as a workflow artifact - full-dump from your PC when ready."
         )
         open(STATE, 'w').write(folder)
         print('NEW PATCH alerted ->', folder)
