@@ -1,0 +1,48 @@
+name: TOG Patch Monitor
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tog-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run patch detector
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: python monitor_ci.py
+
+      - name: Commit state if a patch was detected
+        run: |
+          if ! git diff --quiet -- state/ ; then
+            git config user.name  "tog-monitor"
+            git config user.email "tog-monitor@users.noreply.github.com"
+            git add state/
+            git commit -m "patch detected: bump last_folder"
+            git push
+          else
+            echo "no state change"
+          fi
+
+      - name: Upload manifest (if a new one was fetched)
+        uses: actions/upload-artifact@v4
+        with:
+          name: tog-manifest-${{ github.run_id }}
+          path: manifests/
+          if-no-files-found: ignore
+          retention-days: 90
